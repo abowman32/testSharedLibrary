@@ -1,3 +1,7 @@
+import groovy.json.*
+import org.apache.http.client.methods.*
+import org.apache.http.entity.*
+import org.apache.http.impl.client.*
 import groovy.io.FileType
 import groovy.json.*
 import org.apache.http.client.methods.*
@@ -6,11 +10,41 @@ import org.apache.http.impl.client.*
 import au.com.bytecode.opencsv.CSVReader
 import com.cloudbees.groovy.cps.NonCPS
 import groovy.io.FileType
+import hudson.FilePath
+import jenkins.model.Jenkins
+
+// def artifactsUrl = "https://esri.tpondemand.com/api/v1/TestPlans/182427/TestCases?include=[Id,Name]%26take=500%26format=json%26access_token=MTEwMDpTS0hvcnVPNW93Y0MwZXBTUGVHMDJveW1FaCtRdHdGbEVlYThWZ1hQY2R3PQ=="
+// try {
+//   List<String> artifacts = new ArrayList<String>()
+//   def get = new HttpGet(artifactsUrl)
+//   get.addHeader("content-type","application/json")
+
+//   // execute
+//   def client = HttpClientBuilder.create().build()
+//   def response = client.execute(get)
+
+//   def bufferedReader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()))
+//   def jsonResponse = bufferedReader.getText()
+//   //println%26response: \n" + jsonResponse
+//   def jsonSlurper = new JsonSlurper()
+//   def artifactsJsonObject = jsonSlurper.parseText(jsonResponse)
+//   def dataArray = artifactsJsonObject.Items
+
+//   //def build = currentBuild.getRawBuild()
+//   //build.addOrReplaceAction(new ParametersAction(MetaDataParameter))
+
+//   for(item in dataArray){
+//     artifacts.add(item.Name)
+//   }
+//   return artifacts
+// } catch (Exception e) {
+//     print "There was a problem fetching the artifacts" + e
+// }
 
 def findDataFile(String Dir, String FName) {
     def files = []
     def directory = new File(Dir)
-    def closure = {File f -&gt; if(f.name =~ /${FName}$/) {println f; files &lt;&lt; f}; println(f.path) }
+    def closure = {File f -> if(f.name =~ /${FName}$/) {println f; files << f}; println(f.path) }
     directory.eachFileRecurse FileType.FILES, closure
     return files
 }
@@ -19,37 +53,37 @@ def findDataFile(String Dir, String FName) {
 def getTestMetadata(){
 
     //Get list of all test cases selected for execution
-    def listTests = &quot;${params.testname}&quot;.split(&quot;,&quot;)
+    def listTests = "${params.testname}".split(",")
     def listTestGroups = []
 
     //Group tests in groups of 10
-    def strTemp = &quot;&quot;
+    def strTemp = ""
     def intT = 1
     for(String t : listTests) {
-        strTemp = &quot;${strTemp}\&quot;${t}\&quot;,&quot;
+        strTemp = "${strTemp}\"${t}\","
 
         if((intT % 10) ==0){
             listTestGroups.add(strTemp.toString().substring(0,strTemp.toString().length()-1))
-            strTemp = &quot;&quot;
+            strTemp = ""
         }
 
         intT = intT+1
     }
 
     //add the remaining group
-    if(strTemp.toString().length() &gt; 0){
+    if(strTemp.toString().length() > 0){
         listTestGroups.add(strTemp.toString().substring(0,strTemp.toString().length()-1))
     }
 
     //
     def jsonSlurper = new JsonSlurper()
-    def dataArray = jsonSlurper.parseText(&quot;[]&quot;)
+    def dataArray = jsonSlurper.parseText("[]")
     for (String tg : listTestGroups){
-        def tpURL = &quot;https://esri.tpondemand.com/api/v1/TestPlans/182427/TestCases?where=(Name%20in%20(&quot; + URLEncoder.encode((tg),&quot;UTF-8&quot;) + &quot;))&amp;include=[Name,Tags]&amp;take=25&amp;format=json&amp;access_token=MTEwMDpTS0hvcnVPNW93Y0MwZXBTUGVHMDJveW1FaCtRdHdGbEVlYThWZ1hQY2R3PQ==&quot;
+        def tpURL = "https://esri.tpondemand.com/api/v1/TestPlans/182427/TestCases?where=(Name%20in%20(" + URLEncoder.encode((tg),"UTF-8") + "))&include=[Name,Tags]&take=25&format=json&access_token=MTEwMDpTS0hvcnVPNW93Y0MwZXBTUGVHMDJveW1FaCtRdHdGbEVlYThWZ1hQY2R3PQ=="
         //println tpURL
         try {
             def get = new HttpGet(tpURL)
-            get.addHeader(&quot;content-type&quot;,&quot;application/json&quot;)
+            get.addHeader("content-type","application/json")
 
             // execute
             def client = HttpClientBuilder.create().build()
@@ -57,13 +91,13 @@ def getTestMetadata(){
 
             def bufferedReader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()))
             def jsonResponse = bufferedReader.getText()
-            //println &quot;response: \n&quot; + jsonResponse
+            //println "response: \n" + jsonResponse
 
             def artifactsJsonObject = jsonSlurper.parseText(jsonResponse)
             dataArray += artifactsJsonObject.Items
 
         } catch (Exception e) {
-            println &quot;There was a problem fetching the artifacts&quot; + e
+            println "There was a problem fetching the artifacts" + e
         }
     }
 
@@ -71,12 +105,48 @@ def getTestMetadata(){
     return JsonOutput.toJson(dataArray)
 }
 
-@NonCPS
-def createTestDictionary(String DataFile){
+//  SPLIT OUT THE INLINE CODE BELOW INTO MULTIPLE LINES (113-126) FOR TESTING
+//    List<String[]> rows = new CSVReader(new FileReader(new File("${workspace}/$DataFile"))).readAll()
+    // File file = new File("${workspace}/$DataFile")
+    // echo "Does the file exist? " + file.exists()
+    // List<String[]> rows = new ArrayList()
+    // if(file.exists()) {
+    //     echo "File exists at " + file.absolutePath
+    //     FileReader fr = new FileReader(file)
+    //     if(fr != null){
+    //         rows = new CSVReader(fr).readAll()   
+    //     }
+    // }
+    // else
+    //     echo "File still not found"
+    // echo rows.toString()
 
-    HashMap&lt;String, String&gt; dicTests = new HashMap&lt;&gt;()
-    println(&quot;Datafile:${workspace}/$DataFile&quot;)
-    List&lt;String[]&gt; rows = new CSVReader(new FileReader(new File(&quot;${workspace}/$DataFile&quot;))).readAll()
+@NonCPS
+def createTestDictionary(String DataFile, String FileName){
+
+    HashMap<String, String> dicTests = new HashMap<>()
+    println("Datafile:${workspace}/$DataFile")
+    def fullFilePath = "${workspace}/$DataFile"
+    def rows
+
+    node("Linux") {
+        listFiles(createFilePath("${workspace}src/test/resources/data/learnarcgis/"))
+    }
+
+    def createFilePath(path) {
+        return new FilePath(Jenkins.getInstance().getComputer(env['Linux']).getChannel(), path)
+    }
+    def listFiles(rootPath) {
+        print "Files in ${rootPath}:"
+        for (subPath in rootPath.list()) { //is this the absolute path?
+            echo ${subPath.getName()} 
+            def subName = ${subPath.getName()}
+            if(FileName.equals(${subName){
+                rows = new CSVReader(new FileReader(new File(subPath))).readAll()
+            }
+        }
+    }
+
     def readRow = 0
     def testColumn = -1
     for (String[] columns : rows){
@@ -85,7 +155,7 @@ def createTestDictionary(String DataFile){
         if(readRow==0){
             def colNum = 0
             for(String col : columns ){
-                if(col.toLowerCase().trim() == &quot;testdescription&quot;){
+                if(col.toLowerCase().trim() == "testdescription"){
                     testColumn = colNum
                     break
                 }
@@ -106,99 +176,100 @@ def createTestDictionary(String DataFile){
 @NonCPS
 def getTestNGXML(tests) {
 
-    HashMap&lt;String, HashMap&lt;String,String&gt;&gt; dicTestsFiles = new HashMap&lt;&gt;()
+    HashMap<String, HashMap<String,String>> dicTestsFiles = new HashMap<>()
 
-    def xmlTestNG = &quot;&quot;&quot;&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
-    &lt;!DOCTYPE suite SYSTEM &quot;http://testng.org/testng-1.0.dtd&quot;&gt;
-    &lt;suite name=&quot;{JobName}&quot; preserve-order=&quot;true&quot; parallel=&quot;tests&quot; thread-count=&quot;4&quot;&gt;
+    def xmlTestNG = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+    <suite name="{JobName}" preserve-order="true" parallel="tests" thread-count="4">
             {Tests}
-    &lt;listeners&gt;
-        &lt;listener class-name=&quot;com.esri.qa.reporting.ExtentReporter&quot; /&gt;
-        &lt;listener class-name=&quot;com.esri.qa.reporting.ReportListener&quot; /&gt;
-    &lt;/listeners&gt;
-    &lt;/suite&gt;&quot;&quot;&quot;
+    <listeners>
+        <listener class-name="com.esri.qa.reporting.ExtentReporter" />
+        <listener class-name="com.esri.qa.reporting.ReportListener" />
+    </listeners>
+    </suite>"""
 
-    def xmlTest = &quot;&quot;&quot;   &lt;test name=&apos;{TestName}&apos;&gt;
-    &lt;parameter name=&quot;bType&quot; value=&quot;chrome&quot; /&gt;
-        &lt;parameter name=&quot;fileName&quot; value=&quot;{DataFile}&quot; /&gt;
-    &lt;parameter name=&quot;startRow&quot; value=&quot;{StartRow}&quot; /&gt;
-        &lt;parameter name=&quot;endRow&quot; value=&quot;{EndRow}&quot; /&gt;
-    &lt;parameter name=&quot;batchName&quot; value=&quot;{BatchName}&quot; /&gt;
-        &lt;classes&gt;
-            &lt;class name=&quot;{Class}&quot; /&gt;
-    &lt;/classes&gt;
-    &lt;/test&gt;&quot;&quot;&quot;
+    def xmlTest = """   <test name='{TestName}'>
+    <parameter name="bType" value="chrome" />
+        <parameter name="fileName" value="{DataFile}" />
+    <parameter name="startRow" value="{StartRow}" />
+        <parameter name="endRow" value="{EndRow}" />
+    <parameter name="batchName" value="{BatchName}" />
+        <classes>
+            <class name="{Class}" />
+    </classes>
+    </test>"""
 
 
     //print dicTests
     //formulate the Tests for TestNG XML
-    def xmlTests = &quot;&quot;
+    def xmlTests = ""
     def jsonSlurper = new JsonSlurper()
     def testsCollection = jsonSlurper.parseText(tests)
     for(item in testsCollection){
 
         //Create dictionary object of tags
-        String[] Tags = item.Tags.split(&quot;,&quot;)
-        HashMap&lt;String,String&gt; mapTags = new HashMap&lt;&gt;()
+        String[] Tags = item.Tags.split(",")
+        HashMap<String,String> mapTags = new HashMap<>()
         for(String Tag : Tags){
-            def val = Tag.split(&quot;:&quot;,2)
+            def val = Tag.split(":",2)
             mapTags.put(val[0].trim().toLowerCase(),val[1].trim())
         }
 
         //data file path
-        String dataFile = &quot;src/test/resources/data/learnarcgis/${mapTags[&quot;tdata&quot;]}&quot;
+        String dataFile = "src/test/resources/data/learnarcgis/${mapTags["tdata"]}"
         println(dataFile)
-
+        
+        def fileName = mapTags["tdata"]
         if (!dicTestsFiles.containsKey(dataFile)){
-            def dic = createTestDictionary(dataFile)
+            def dic = createTestDictionary(dataFile, fileName)
             dicTestsFiles.put(dataFile, dic)
         }
 
 
         String givenTest = dicTestsFiles[dataFile][item.Name.toLowerCase().trim().toString()]
-        def xmlT = xmlTest.replace(&quot;{StartRow}&quot;,givenTest)
-        xmlT = xmlT.replace(&quot;{EndRow}&quot;,givenTest)
-        xmlT = xmlT.replace(&quot;{DataFile}&quot;,dataFile )
-        xmlT = xmlT.replace(&quot;{Class}&quot;,mapTags[&quot;tclass&quot;])
-        xmlT = xmlT.replace(&quot;{TestName}&quot;,item.Name.toLowerCase().trim())
-        xmlT = xmlT.replace(&quot;{BatchName}&quot;,&quot;${JOB_NAME}-${BUILD_NUMBER}&quot;)
-        xmlTests = xmlTests + &apos;\n&apos; + xmlT
+        def xmlT = xmlTest.replace("{StartRow}",givenTest)
+        xmlT = xmlT.replace("{EndRow}",givenTest)
+        xmlT = xmlT.replace("{DataFile}",dataFile )
+        xmlT = xmlT.replace("{Class}",mapTags["tclass"])
+        xmlT = xmlT.replace("{TestName}",item.Name.toLowerCase().trim())
+        xmlT = xmlT.replace("{BatchName}","${JOB_NAME}-${BUILD_NUMBER}")
+        xmlTests = xmlTests + '\n' + xmlT
     }
 
-    xmlTestNG = xmlTestNG.replace(&quot;{JobName}&quot;,&quot;${JOB_NAME}&quot;)
-    xmlTestNG = xmlTestNG.replace(&quot;{Tests}&quot;,xmlTests)
+    xmlTestNG = xmlTestNG.replace("{JobName}","${JOB_NAME}")
+    xmlTestNG = xmlTestNG.replace("{Tests}",xmlTests)
 
     return xmlTestNG.toString()
 
 }
 
 
-node(&apos;Linux&apos;) {
-    stage(&apos;Clone from CodeHub&apos;) {
-        git branch: &quot;${params.&apos;git.branch&apos;}&quot;, url: &apos;git@github-webpage-testing:/IST-QA/webpage-testing.git&apos;
-        //git branch: &quot;${params.&apos;git.branch&apos;}&quot;, url: &apos;git@codehub.esri.com:IST-QA/webpage-testing.git&apos;
+node('Linux') {
+    stage('Clone from CodeHub') {
+        git branch: "${params.'git.branch'}", url: 'git@github-webpage-testing:/IST-QA/webpage-testing.git'
+        //git branch: "${params.'git.branch'}", url: 'git@codehub.esri.com:IST-QA/webpage-testing.git'
     }
 
-    stage(&apos;Create TestNG XML&apos;) {
+    stage('Create TestNG XML') {
 
         def arr = getTestMetadata()
-        println(&quot;metadata$arr&quot;)
+        println("metadata$arr")
         def TestNGXML = getTestNGXML(arr)
-        println(&quot;testxml$TestNGXML&quot;)
-        writeFile encoding: &apos;utf-8&apos;, file: &apos;TestNG.xml&apos;, text: TestNGXML
+        println("testxml$TestNGXML")
+        writeFile encoding: 'utf-8', file: 'TestNG.xml', text: TestNGXML
 
     }
 /*
-    stage(&apos;Build &amp; Test&apos;) {
-        def cmd = &quot; -PframeworkVersion=2.0-SNAPSHOT -Pbase.url=${params.&apos;base.url&apos;} -Pgrid.url=${params.&apos;grid.url&apos;} -Preport.dashboard.enabled=${params.&apos;report.dashboard.enabled&apos;} -Pgrid.enabled=${params.&apos;grid.enabled&apos;} -Preport.server=${params.&apos;report.server&apos;} -Pproject.name=${params.&apos;project.name&apos;} -Pversion=2.0-SNAPSHOT -Pscreenshot.on.success=${params.&apos;screenshot.on.success&apos;} -Preport.folder=${params.&apos;report.folder&apos;} -Preport.name=${params.&apos;report.name&apos;} -Pcbt.enabled=${params.&apos;cbt.enabled&apos;} -Ptestngxml=TestNG.xml --refresh-dependencies clean build&quot;
+    stage('Build & Test') {
+        def cmd = " -PframeworkVersion=2.0-SNAPSHOT -Pbase.url=${params.'base.url'} -Pgrid.url=${params.'grid.url'} -Preport.dashboard.enabled=${params.'report.dashboard.enabled'} -Pgrid.enabled=${params.'grid.enabled'} -Preport.server=${params.'report.server'} -Pproject.name=${params.'project.name'} -Pversion=2.0-SNAPSHOT -Pscreenshot.on.success=${params.'screenshot.on.success'} -Preport.folder=${params.'report.folder'} -Preport.name=${params.'report.name'} -Pcbt.enabled=${params.'cbt.enabled'} -Ptestngxml=TestNG.xml --refresh-dependencies clean build"
         if (isUnix()) {
-            sh &quot;./gradlew ${cmd}&quot;
+            sh "./gradlew ${cmd}"
         } else {
-            bat &quot;gradlew.bat ${cmd}&quot;
+            bat "gradlew.bat ${cmd}"
         }
     }
 
-    stage(&apos;Publish results&apos;) {
+    stage('Publish results') {
 
     }*/
 }
